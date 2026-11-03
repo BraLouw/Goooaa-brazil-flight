@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GOOOAL! Brazil Flight</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(#168c54,#062d29);color:white;font-family:Arial,sans-serif;text-align:center;padding:12px}
+.shell{max-width:920px;margin:auto}
+h1{color:#ffe34c;text-shadow:0 4px #07502f;font-size:clamp(26px,5vw,46px);margin:8px}
+.tag{color:#d6ffe8;font-weight:bold;letter-spacing:1px}
+.frame{position:relative;border:5px solid #ffdf24;border-radius:20px;overflow:hidden;box-shadow:0 15px 45px #001a18;background:#68cde0}
+canvas{display:block;width:100%;height:auto;touch-action:manipulation}
+.hud{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none}
+.pill{background:#003c33d9;border:2px solid #ffffff66;border-radius:12px;padding:7px 12px;font-weight:bold}
+.pill small{display:block;color:#bfffe0;font-size:10px;letter-spacing:1px}
+#overlay{position:absolute;inset:0;background:#00251acc;display:flex;align-items:center;justify-content:center;padding:15px}
+.panel{width:min(440px,95%);background:linear-gradient(145deg,#087d48,#034b3c);border:3px solid #ffe34c;border-radius:20px;padding:22px;box-shadow:0 12px 35px #001c19aa}
+.panel h2{font-size:clamp(24px,5vw,36px);color:#ffe34c;margin:0 0 8px}
+.panel p{line-height:1.5}
+.big,.control{border:0;border-radius:13px;font-weight:900;cursor:pointer}
+.big{background:linear-gradient(#ffeb55,#ffbf18);color:#17432d;font-size:20px;padding:13px 25px;box-shadow:0 5px #003c2c}
+.controls{display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin:12px}
+.control{background:#064a3b;color:white;border:1px solid #8bd9a9;padding:9px 14px}
+.hint,.footer{font-size:12px;color:#c6ffe0}
+.hidden{display:none!important}
+@media(max-width:550px){body{padding:6px}.frame{border-width:3px}.hud{top:6px;left:6px;right:6px}.pill{padding:5px 8px;font-size:13px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<h1>⚽ GOOOAL! BRAZIL FLIGHT 🇧🇷</h1>
+<p class="tag">FLY OVER RIO • COLLECT GOLDEN FOOTBALLS • BECOME A LEGEND</p>
+<div class="frame">
+<canvas id="c" width="900" height="560"></canvas>
+<div class="hud">
+<div class="pill"><small>SCORE</small><span id="score">0</span></div>
+<div class="pill"><small>BEST</small><span id="best">0</span></div>
+<div class="pill"><small>POWER</small><span id="power">READY</span></div>
+</div>
+<div id="overlay">
+<div class="panel">
+<h2 id="title">BRAZIL NEEDS A HERO!</h2>
+<p id="desc">Take to the skies above Rio! Dodge the giant stadium pipes, collect golden footballs and chase the biggest score.</p>
+<p>🟢 Tap / click / press <b>SPACE</b> to flap<br>🟡 Golden footballs = bonus points<br>🔵 Blue stars = temporary shield</p>
+<button class="big" id="play">KICK OFF! ⚽</button>
+<p class="hint">One-button controls • Works on computer and phone</p>
+</div>
+</div>
+</div>
+<div class="controls">
+<button class="control" id="sound">🔊 SOUND ON</button>
+<button class="control" id="pause">⏸ PAUSE</button>
+<button class="control" id="how">❔ HOW TO PLAY</button>
+</div>
+<p class="footer">Made for football fans 💚💛 — Best score saves on this device.</p>
+</div>
+
+<script>
+(()=>{
+const c=document.getElementById('c'),x=c.getContext('2d'),$=id=>document.getElementById(id),W=900,H=560,ground=510;
+let state='ready',paused=false,bird,pipes,balls,stars,fx,score=0,best=0,frame=0,shield=0,speed=3.4,sound=true,audio;
+let pipesSinceGoal=0,goalRound=0,goalMode=false,goalkeeper={x:450,y:280},goalShot=null,goalMessage='',goalCooldown=0;
+
+try{best=+(localStorage.brazilFlightBest||0)}catch(e){}
+$('best').textContent=best;
+
+function beep(f=500,d=.08,type='sine'){
+if(!sound)return;
+try{
+audio=audio||new(window.AudioContext||window.webkitAudioContext)();
+let o=audio.createOscillator(),g=audio.createGain();
+o.type=type;o.frequency.value=f;g.gain.value=.04;
+o.connect(g);g.connect(audio.destination);o.start();
+g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+d);
+o.stop(audio.currentTime+d)
+}catch(e){}
+}
+
+function reset(){
+bird={x:190,y:265,vy:0,rot:0};pipes=[];balls=[];stars=[];fx=[];
+score=0;frame=0;shield=0;speed=3.4;
+pipesSinceGoal=0;goalRound=0;goalMode=false;goalShot=null;goalMessage='';goalCooldown=0;
+$('score').textContent=0;$('power').textContent='READY'
+}
+
+function panel(t,d,b){
+$('title').textContent=t;$('desc').innerHTML=d;
+$('play').textContent=b;$('overlay').classList.remove('hidden')
+}
+
+function start(){
+reset();state='playing';paused=false;
+$('pause').textContent='⏸ PAUSE';
+$('overlay').classList.add('hidden');flap();beep(660,.12)
+}
+
+function flap(){
+if(state!=='playing'||paused||goalShot||goalCooldown>0)return;
+bird.vy=-7.3;beep(430,.07,'triangle');
+for(let i=0;i<5;i++)fx.push({x:bird.x-15,y:bird.y,vx:-Math.random()*3-1,vy:(Math.random()-.5)*3,life:20,col:i%2?'#ffe34c':'white'})
+}
+
+function burst(a,b,col){
+for(let i=0;i<20;i++){
+let q=Math.random()*6.28,s=Math.random()*4+1;
+fx.push({x:a,y:b,vx:Math.cos(q)*s,vy:Math.sin(q)*s,life:30,col})
+}
+}
+
+function over(){
+if(state!=='playing')return;
+state='over';beep(130,.3,'sawtooth');
+if(score>best){
+best=score;$('best').textContent=best;
+try{localStorage.brazilFlightBest=best}catch(e){}
+}
+panel('WHAT A MATCH! 🏆',`You scored <b>${score}</b> points!<br>${score>=30?'ABSOLUTE LEGEND! 🇧🇷':score>=15?'Great flying, superstar!':'Ready for a rematch?'}<br>Best score: <b>${best}</b>`,'REMATCH! ⚽')
+}
+
+function spawn(){
+let gap=180,top=80+Math.random()*210;
+pipes.push({x:930,top,gap,passed:false});
+if(Math.random()<.9)balls.push({x:1070,y:top+gap/2+(Math.random()-.5)*65});
+if(Math.random()<.23)stars.push({x:1200,y:100+Math.random()*300})
+}
+
+function hitRect(cx,cy,r,rx,ry,rw,rh){
+let a=Math.max(rx,Math.min(cx,rx+rw)),b=Math.max(ry,Math.min(cy,ry+rh));
+return (cx-a)**2+(cy-b)**2<r*r
+}
+
+function update(){
+if(goalShot){goalShot.t++;if(goalShot.t>24){finishShot()}return}
+if(goalCooldown>0){goalCooldown--;if(goalCooldown===0){goalMessage='';goalRound=0;goalMode=false}return}
+if(goalMode)return;
+
+frame++;bird.vy+=.39;bird.y+=bird.vy;
+bird.rot=Math.min(.85,Math.max(-.55,bird.vy*.07));
+speed=Math.min(6.5,3.4+score*.018);
+if(frame%Math.max(75,Math.floor(112-score*.25))===0)spawn();
+
+pipes.forEach(p=>{
+p.x-=speed;
+if(!p.passed&&p.x+58<bird.x){
+p.passed=true;score++;pipesSinceGoal++;
+$('score').textContent=score;beep(760,.06);
+if(pipesSinceGoal>=5&&!goalShot){beginGoalChallenge();return}
+}
+let hit=hitRect(bird.x,bird.y,18,p.x,0,58,p.top)||hitRect(bird.x,bird.y,18,p.x,p.top+p.gap,58,ground-p.top-p.gap);
+if(hit){
+if(shield){shield=0;p.x=-100;burst(bird.x,bird.y,'#69eaff');$('power').textContent='READY';beep(260,.2)}
+else over()
+}
+});
+
+pipes=pipes.filter(p=>p.x>-80);
+balls.forEach(b=>{
+b.x-=speed;
+if(Math.hypot(bird.x-b.x,bird.y-b.y)<32){
+b.got=true;score+=3;$('score').textContent=score;
+burst(b.x,b.y,'#ffe34c');beep(980,.13)
+}
+});
+balls=balls.filter(b=>b.x>-30&&!b.got);
+
+stars.forEach(s=>{
+s.x-=speed;
+if(Math.hypot(bird.x-s.x,bird.y-s.y)<34){
+s.got=true;shield=300;$('power').textContent='SHIELD!';
+burst(s.x,s.y,'#69eaff');beep(1100,.2)
+}
+});
+stars=stars.filter(s=>s.x>-30&&!s.got);
+if(shield>0)shield--;
+if(shield===0)$('power').textContent='READY';
+if(bird.y>ground-16||bird.y<15)over();
+
+fx.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.08;p.life--});
+fx=fx.filter(p=>p.life>0)
+}
+
+function beginGoalChallenge(){
+pipesSinceGoal=0;goalRound++;state='playing';goalCooldown=0;
+goalkeeper={x:310+Math.random()*280,y:190+Math.random()*180};
+goalShot=null;goalMessage=`ROUND ${goalRound} — PICK A SPOT!`;
+beep(820,.18)
+}
+
+function shootAt(px,py){
+if(state!=='playing'||paused||pipesSinceGoal!==0||goalShot||goalCooldown>0)return;
+if(px<180||px>720||py<115||py>445)return;
+goalShot={x:px,y:py,t:0};beep(560,.1)
+}
+
+function finishShot(){
+let dx=goalShot.x-goalkeeper.x,dy=goalShot.y-goalkeeper.y;
+let reach=48+(goalRound-1)*5;
+if(Math.hypot(dx,dy)<reach){
+goalMessage='SAVED! The goalkeeper got it! Keep flying!';
+burst(goalkeeper.x,goalkeeper.y,'#69eaff');beep(180,.3,'sawtooth')
+}else{
+score+=5;$('score').textContent=score;
+goalMessage='GOOOOOAL! +5 POINTS! 🇧🇷';
+burst(goalShot.x,goalShot.y,'#ffdf24');
+beep(980,.12);setTimeout(()=>beep(1250,.2),120)
+}
+goalShot=null;goalCooldown=115
+}
+
+function drawGoalChallenge(){
+x.fillStyle='#0b633d';x.fillRect(0,0,W,H);
+x.fillStyle='#158e50';x.fillRect(0,390,W,120);
+for(let i=0;i<12;i++){
+x.fillStyle=i%2?'#1ca45b':'#168b4d';x.fillRect(i*75,390,75,120)
+}
+x.fillStyle='#fff';x.font='bold 34px Arial';x.textAlign='center';
+x.fillText('PENALTY TIME!',450,58);
+x.font='bold 19px Arial';x.fillText(`Clear 5 obstacles • Goal round ${goalRound}`,450,91);
+
+x.fillStyle='#f5f5e9';
+x.fillRect(155,120,590,16);x.fillRect(155,120,15,330);x.fillRect(730,120,15,330);
+x.strokeStyle='#d8eee8';x.lineWidth=3;
+for(let xx=180;xx<730;xx+=35){x.beginPath();x.moveTo(xx,137);x.lineTo(xx,448);x.stroke()}
+for(let yy=155;yy<450;yy+=32){x.beginPath();x.moveTo(170,yy);x.lineTo(730,yy);x.stroke()}
+
+x.fillStyle='#ffffff';x.font='bold 17px Arial';
+x.fillText('TAP WHERE YOU WANT TO SHOOT!',450,485);
+
+x.save();x.translate(goalkeeper.x,goalkeeper.y);
+x.fillStyle='#1261a0';x.beginPath();x.roundRect(-31,-17,62,65,17);x.fill();
+x.fillStyle='#ffdf24';x.beginPath();x.ellipse(0,-27,24,22,0,0,7);x.fill();
+x.fillStyle='white';x.beginPath();x.arc(9,-32,7,0,7);x.fill();
+x.fillStyle='#102b25';x.beginPath();x.arc(11,-32,3,0,7);x.fill();
+x.fillStyle='#ed7625';x.beginPath();x.moveTo(20,-24);x.lineTo(36,-19);x.lineTo(20,-14);x.fill();
+x.fillStyle='#fff';x.beginPath();x.arc(-34,2,14,0,7);x.arc(34,2,14,0,7);x.fill();
+x.restore();
+
+if(goalShot){
+let t=Math.min(1,goalShot.t/24),sx=450+(goalShot.x-450)*t,sy=510+(goalShot.y-510)*t;
+x.fillStyle='#fff';x.beginPath();x.arc(sx,sy,13,0,7);x.fill();
+x.fillStyle='#172f25';x.beginPath();x.arc(sx,sy,6,0,7);x.fill()
+}
+if(goalMessage){x.fillStyle='#ffed63';x.font='bold 25px Arial';x.fillText(goalMessage,450,535)}
+x.textAlign='left'
+}
+
+function bg(){
+let g=x.createLinearGradient(0,0,0,H);
+g.addColorStop(0,'#62d8ed');g.addColorStop(.7,'#c6f3dc');g.addColorStop(1,'#4cb875');
+x.fillStyle=g;x.fillRect(0,0,W,H);
+x.fillStyle='#fff2a3';x.beginPath();x.arc(740,100,48,0,7);x.fill();
+
+x.fillStyle='#399d75';
+for(let i=0;i<5;i++){
+let a=((i*250-frame*.35)%(W+300)+W+300)%(W+300)-100;
+x.beginPath();x.moveTo(a,350);x.quadraticCurveTo(a+80,120+(i%2)*55,a+190,350);x.fill()
+}
+x.fillStyle='#386c61';
+x.fillRect(455,254,10,66);x.fillRect(430,265,60,8);x.fillRect(450,230,20,28);x.fillRect(453,213,14,22);
+
+for(let i=0;i<6;i++){
+let a=((i*190-frame*.65)%(W+180)+W+180)%(W+180)-90,b=80+i%3*65;
+x.fillStyle='#ffffffbb';x.beginPath();
+x.arc(a,b,20,0,7);x.arc(a+24,b-9,26,0,7);x.arc(a+52,b,19,0,7);x.fill()
+}
+x.fillStyle='#178e50';x.fillRect(0,440,W,70);
+for(let a=0;a<W;a+=36){x.fillStyle=a%72?'#23a85d':'#15934e';x.fillRect(a,440,36,70)}
+x.fillStyle='white';x.fillRect(0,437,W,4)
+}
+
+function pipe(p){
+let g=x.createLinearGradient(p.x,0,p.x+58,0);
+g.addColorStop(0,'#08783e');g.addColorStop(.5,'#24c76c');g.addColorStop(1,'#075c36');
+x.fillStyle=g;x.fillRect(p.x,0,58,p.top);
+x.fillRect(p.x,p.top+p.gap,58,ground-p.top-p.gap);
+x.fillStyle='#ffdf24';
+x.fillRect(p.x-6,p.top-18,70,18);x.fillRect(p.x-6,p.top+p.gap,70,18);
+x.fillStyle='#ffffff44';x.fillRect(p.x+10,0,6,p.top);x.fillRect(p.x+10,p.top+p.gap,6,ground)
+}
+
+function drawBird(){
+x.save();x.translate(bird.x,bird.y);x.rotate(bird.rot);
+if(shield){
+x.strokeStyle='#76efff';x.lineWidth=5;x.beginPath();
+x.arc(0,0,30+Math.sin(frame*.2)*3,0,7);x.stroke()
+}
+x.fillStyle='#087b42';x.beginPath();
+x.moveTo(-17,3);x.lineTo(-35,-7);x.lineTo(-29,8);x.lineTo(-37,15);x.lineTo(-13,13);x.fill();
+x.fillStyle='#ffdf24';x.beginPath();x.ellipse(0,0,23,19,0,0,7);x.fill();
+x.fillStyle='#159447';x.beginPath();x.ellipse(-2,5,13,9,-.2,0,7);x.fill();
+x.fillStyle='#f4ad19';x.beginPath();x.ellipse(-4,2,13,7,Math.sin(frame*.45)*.35,0,7);x.fill();
+x.fillStyle='white';x.beginPath();x.arc(11,-8,7,0,7);x.fill();
+x.fillStyle='#102b25';x.beginPath();x.arc(13,-8,3,0,7);x.fill();
+x.fillStyle='#ed7625';x.beginPath();x.moveTo(19,-1);x.lineTo(34,4);x.lineTo(19,8);x.fill();
+x.fillStyle='#087b42';x.beginPath();x.arc(-8,-11,4,0,7);x.fill();
+x.restore()
+}
+
+function draw(){
+if(goalMode&&state==='playing'){drawGoalChallenge();return}
+bg();pipes.forEach(pipe);
+balls.forEach(b=>{
+x.fillStyle='#ffdf24';x.beginPath();x.arc(b.x,b.y,13,0,7);x.fill();
+x.fillStyle='#fff';x.beginPath();x.arc(b.x,b.y,7,0,7);x.fill();
+x.fillStyle='#174b35';
+for(let i=0;i<5;i++){let a=i*1.256;x.beginPath();x.arc(b.x+Math.cos(a)*9,b.y+Math.sin(a)*9,3,0,7);x.fill()}
+});
+stars.forEach(s=>{
+x.save();x.translate(s.x,s.y);x.rotate(frame*.04);
+x.fillStyle='#48dfff';x.strokeStyle='white';x.lineWidth=3;x.beginPath();
+for(let i=0;i<10;i++){let r=i%2?7:17,a=i*Math.PI/5-Math.PI/2;x.lineTo(Math.cos(a)*r,Math.sin(a)*r)}
+x.closePath();x.fill();x.stroke();x.restore()
+});
+fx.forEach(p=>{
+x.globalAlpha=Math.max(0,p.life/30);x.fillStyle=p.col;
+x.beginPath();x.arc(p.x,p.y,3,0,7);x.fill();x.globalAlpha=1
+});
+if(bird)drawBird();
+x.fillStyle='#ffdf24';x.fillRect(0,ground,W,6)
+}
+
+function loop(){
+if(state==='playing'&&!paused)update();
+draw();requestAnimationFrame(loop)
+}
+
+function action(){
+if(state==='ready'||state==='over')start();
+else flap()
+}
+
+c.addEventListener('pointerdown',e=>{
+e.preventDefault();
+if(goalMode&&state==='playing'){
+let r=c.getBoundingClientRect(),px=(e.clientX-r.left)*W/r.width,py=(e.clientY-r.top)*H/r.height;
+if(!goalShot&&goalCooldown===0)shootAt(px,py);
+return
+}
+action()
+});
+
+$('play').onclick=start;
+$('sound').onclick=()=>{
+sound=!sound;$('sound').textContent=sound?'🔊 SOUND ON':'🔇 SOUND OFF';
+if(sound)beep(600)
+};
+$('pause').onclick=()=>{
+if(state==='playing'){paused=!paused;$('pause').textContent=paused?'▶ RESUME':'⏸ PAUSE'}
+};
+$('how').onclick=()=>{
+if(state!=='playing')panel('HOW TO BECOME A LEGEND','Tap, click or press SPACE to flap. Fly through the gaps. Each pipe you pass earns 1 point. Golden footballs give 3 bonus points. Blue stars give you a temporary shield. Avoid pipes, floor and ceiling!','GOT IT — PLAY!')
+};
+
+window.addEventListener('keydown',e=>{
+if(['Space','ArrowUp','KeyW'].includes(e.code)){
+e.preventDefault();
+if(!e.repeat){if(goalMode&&state==='playing'){return}action()}
+}
+if(e.code==='Escape'&&state==='playing')$('pause').click()
+});
+
+reset();draw();loop();
+})();
+</script>
+</body>
+</html>

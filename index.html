@@ -155,6 +155,8 @@ else over()
 }
 });
 
+if(goalMode)return;
+
 pipes=pipes.filter(p=>p.x>-80);
 balls.forEach(b=>{
 b.x-=speed;
@@ -183,6 +185,7 @@ fx=fx.filter(p=>p.life>0)
 
 function beginGoalChallenge(){
 pipesSinceGoal=0;goalRound++;state='playing';goalCooldown=0;
+goalMode=true;
 goalkeeper={x:310+Math.random()*280,y:190+Math.random()*180};
 goalShot=null;goalMessage=`ROUND ${goalRound} — PICK A SPOT!`;
 beep(820,.18)

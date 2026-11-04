@@ -194,13 +194,21 @@ beep(820,.18)
 function shootAt(px,py){
 if(state!=='playing'||paused||pipesSinceGoal!==0||goalShot||goalCooldown>0)return;
 if(px<180||px>720||py<115||py>445)return;
-goalShot={x:px,y:py,t:0};beep(560,.1)
+
+// The keeper chooses a fresh, random dive direction for every penalty.
+let diveX=190+Math.random()*520;
+let diveY=155+Math.random()*260;
+goalkeeper.diveFromX=goalkeeper.x;
+goalkeeper.diveFromY=goalkeeper.y;
+goalkeeper.diveToX=diveX;
+goalkeeper.diveToY=diveY;
+goalkeeper.diving=true;
+goalShot={x:px,y:py,t:0,saved:Math.hypot(px-diveX,py-diveY)<65+(goalRound-1)*4};
+beep(560,.1)
 }
 
 function finishShot(){
-let dx=goalShot.x-goalkeeper.x,dy=goalShot.y-goalkeeper.y;
-let reach=48+(goalRound-1)*5;
-if(Math.hypot(dx,dy)<reach){
+if(goalShot.saved){
 goalMessage='SAVED! The goalkeeper got it! Keep flying!';
 burst(goalkeeper.x,goalkeeper.y,'#69eaff');beep(180,.3,'sawtooth')
 }else{
@@ -209,6 +217,7 @@ goalMessage='GOOOOOAL! +5 POINTS! 🇧🇷';
 burst(goalShot.x,goalShot.y,'#ffdf24');
 beep(980,.12);setTimeout(()=>beep(1250,.2),120)
 }
+goalkeeper.diving=false;
 goalShot=null;goalCooldown=115
 }
 
@@ -231,7 +240,13 @@ for(let yy=155;yy<450;yy+=32){x.beginPath();x.moveTo(170,yy);x.lineTo(730,yy);x.
 x.fillStyle='#ffffff';x.font='bold 17px Arial';
 x.fillText('TAP WHERE YOU WANT TO SHOOT!',450,485);
 
+if(goalkeeper.diving){
+let diveT=goalShot?Math.min(1,goalShot.t/24):1;
+goalkeeper.x=goalkeeper.diveFromX+(goalkeeper.diveToX-goalkeeper.diveFromX)*diveT;
+goalkeeper.y=goalkeeper.diveFromY+(goalkeeper.diveToY-goalkeeper.diveFromY)*diveT;
+}
 x.save();x.translate(goalkeeper.x,goalkeeper.y);
+if(goalkeeper.diving)x.rotate((goalkeeper.diveToX-goalkeeper.diveFromX)*.0015);
 x.fillStyle='#1261a0';x.beginPath();x.roundRect(-31,-17,62,65,17);x.fill();
 x.fillStyle='#ffdf24';x.beginPath();x.ellipse(0,-27,24,22,0,0,7);x.fill();
 x.fillStyle='white';x.beginPath();x.arc(9,-32,7,0,7);x.fill();
@@ -345,7 +360,7 @@ action()
 });
 
 $('play').onclick=start;
-$('sound').onclick=()=>{
+$('sound').onclick=()=>{a
 sound=!sound;$('sound').textContent=sound?'🔊 SOUND ON':'🔇 SOUND OFF';
 if(sound)beep(600)
 };
